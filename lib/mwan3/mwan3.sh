@@ -749,7 +749,12 @@ mwan3_set_iface_hotplug_state() {
 mwan3_get_iface_hotplug_state() {
 	local iface=$1
 	local state=offline
-	readfile state "$MWAN3_STATUS_DIR/iface_state/$iface"
+	# 优先读 mwan3track STATUS 文件
+	if [ -f "$MWAN3TRACK_STATUS_DIR/$iface/STATUS" ]; then
+		readfile state "$MWAN3TRACK_STATUS_DIR/$iface/STATUS"
+	else
+		readfile state "$MWAN3_STATUS_DIR/iface_state/$iface"
+	fi
 	echo "$state"
 }
 
