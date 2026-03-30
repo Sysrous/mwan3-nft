@@ -424,6 +424,7 @@ mwan3_delete_iface_ipset_entries()
 mwan3_set_policy()
 {
 	local id iface family metric probability weight device is_lowest is_offline total_weight
+	local policy="$2"
 
 	is_lowest=0
 	config_get iface "$1" interface
@@ -506,7 +507,7 @@ mwan3_create_policies_iptables()
 	lowest_metric_v6=$DEFAULT_LOWEST_METRIC
 	total_weight_v6=0
 
-	config_list_foreach "$1" use_member mwan3_set_policy
+	config_list_foreach "$1" use_member mwan3_set_policy "$1"
 }
 
 mwan3_set_policies_iptables()
