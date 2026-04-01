@@ -1,14 +1,14 @@
 # =========================================================================
-#      Build OpenWrt Packages - NFT-MWAN3 & Nixxi (v6 - Robust Download)
+#  Build OpenWrt Packages - NFT-MWAN3 & Nixxi (v7 - Main Branch Fix)
 # =========================================================================
 # 运维工程师注释：
-# 版本 6 更新日志：
-# 1. [最终诊断] 锁定 Exit Code 128 的根源：GitHub Actions runner 的防火墙
-#    阻止了 git:// 协议 (端口 9418) 的出站连接，导致 Connection timed out。
-# 2. [终极方案] 彻底放弃 git clone 命令。改用 wget 通过标准 HTTPS (端口 443)
-#    下载 mwan3 源码的 tar.gz 压缩包，然后解压。
-# 3. [工作流] 使用 wget + tar 的组合，可以完美绕过认证和防火墙两大难题，
-#    是 CI/CD 环境下获取代码的最稳健方式。
+# 版本 7 更新日志：
+# 1. [最终修复] 锁定 Exit Code 8 的元凶：HTTP 404 Not Found。
+# 2. [原因分析] feckert/mwan3 仓库的默认分支是 'main' 而不是 'master'，
+#    导致我们下载的 URL 无效。
+# 3. [同步修正] 调整了 wget 的下载 URL，并同步修改了后续 mv 命令中
+#    解压出的文件夹名 (mwan3-master -> mwan3-main)。
+# 4. [信心] 这是最常见的路径错误，修复后流程应完全打通。
 # =========================================================================
 
 name: Build Custom IPK Packages
@@ -35,16 +35,17 @@ jobs:
     - name: Update and Install Feeds
       run: cd openwrt_source && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-    - name: Inject Customizations (Robust Method)
-      # [修复] 使用 wget + tar 代替 git clone，绕过所有网络问题
+    - name: Inject Customizations (Main Branch Fix)
+      # [修复] 将 master 分支修正为 main 分支
       run: |
         echo "--- Injecting custom packages and modifications ---"
         rm -rf openwrt_source/package/feeds/packages/mwan3
         rm -rf openwrt_source/package/mwan3
-        echo "Downloading mwan3 as a tarball via HTTPS to bypass git issues..."
-        wget https://github.com/feckert/mwan3/archive/refs/heads/master.tar.gz -O mwan3.tar.gz
+        echo "Downloading mwan3 (main branch) as a tarball via HTTPS..."
+        wget https://github.com/feckert/mwan3/archive/refs/heads/main.tar.gz -O mwan3.tar.gz
         tar -xzf mwan3.tar.gz
-        mv mwan3-master openwrt_source/package/mwan3
+        # [修复] 同步修改解压后的文件夹名
+        mv mwan3-main openwrt_source/package/mwan3
         rm mwan3.tar.gz
         echo "Copying custom luci-app-nixxi..."
         cp -r $GITHUB_WORKSPACE/luci-app-nixxi openwrt_source/package/
