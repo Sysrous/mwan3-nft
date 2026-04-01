@@ -1,0 +1,87 @@
+#
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# File name: build-mwan3.yml
+# Description: Build mwan3-nft package
+#
+
+name: Build mwan3-nft
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'OpenWrt Branch'
+        required: true
+        default: 'openwrt-23.05'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: 初始化编译环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+        git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+        libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
+        mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip qemu-utils \
+        rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        
+    - name: 克隆 OpenWrt 源码
+      run: |
+        git clone https://github.com/openwrt/openwrt.git -b ${{ github.event.inputs.branch }} openwrt
+        cd openwrt
+        echo "src-git mwan3nft https://github.com/dl12345/mwan3-nft.git" >> feeds.conf.default
+      
+    - name: 更新 & 安装 Feeds
+      run: |
+        cd openwrt
+        # 移除官方旧的 mwan3，避免冲突
+        rm -rf feeds/packages/net/mwan3
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: 加载自定义配置
+      run: |
+        [ -e -f .config ] && mv .config openwrt/.config
+        cd openwrt
+        make defconfig
+
+    - name: 仅下载 mwan3 依赖包
+      run: |
+        cd openwrt
+        make package/mwan3/download V=s
+        make package/luci-app-mwan3/download V=s
+        
+    - name: 编译 mwan3 和 luci-app-mwan3
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make package/mwan3/compile V=s
+        make package/luci-app-mwan3/compile V=s
+
+    - name: 整理文件
+      id: organize
+      run: |
+        cd openwrt/bin/packages/
+        echo "PACKAGES_PATH=$(pwd)" >> $GITHUB_ENV
+        echo "packages" > ../../../ARTIFACT
+        
+    - name: 上传编译产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: mwan3-nft-packages
+        path: ${{ env.PACKAGES_PATH }}
