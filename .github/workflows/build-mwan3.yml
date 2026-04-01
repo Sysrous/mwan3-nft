@@ -1,4 +1,4 @@
-name: Build mwan3-nft ipk for OpenWrt 24.10
+name: Build mwan3-nft ipk for x86_64
 
 on:
   workflow_dispatch:
@@ -38,15 +38,16 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Load custom config
+      - name: Generate .config for x86_64
         run: |
-          if [ -f .config ]; then
-            cp .config openwrt/.config
-          else
-            echo "ERROR: .config file not found in repository root."
-            ls -la
-            exit 1
-          fi
+          cat > openwrt/.config <<'EOF'
+          CONFIG_TARGET_x86=y
+          CONFIG_TARGET_x86_64=y
+          CONFIG_TARGET_x86_64_DEVICE_generic=y
+
+          CONFIG_PACKAGE_mwan3=y
+          CONFIG_PACKAGE_luci-app-mwan3=y
+          EOF
           cd openwrt
           make defconfig
 
@@ -55,7 +56,7 @@ jobs:
           cd openwrt
           make download -j$(nproc) V=s
 
-      - name: Build packages
+      - name: Compile mwan3
         run: |
           cd openwrt
           make package/mwan3/compile V=s -j$(nproc)
@@ -64,11 +65,11 @@ jobs:
       - name: Collect ipk
         run: |
           mkdir -p upload
-          find openwrt/bin/packages/ -name "*.ipk" | xargs -I {} cp {} upload/ || true
+          find openwrt/bin/packages/ -name "*.ipk" -exec cp {} upload/ \;
           ls -lah upload
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mwan3-nft-ipk
+          name: mwan3-nft-ipk-x86_64
           path: upload/
