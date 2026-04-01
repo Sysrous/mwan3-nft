@@ -1,6 +1,18 @@
-name: Build Specific Packages
+# =========================================================================
+#            Build OpenWrt Packages - NFT-MWAN3 & Nixxi
+# =========================================================================
+# 运维工程师注释：
+# 这个脚本的目标非常明确：
+# 1. 不编译完整固件。
+# 2. 使用社区的 nftables 版 mwan3 替换官方版。
+# 3. 添加用户自定义的 luci-app-nixxi。
+# 4. 只编译这两个目标包及其所有依赖，生成 .ipk 文件。
+# =========================================================================
+
+name: Build Custom IPK Packages
 
 on:
+  # 允许在 GitHub Actions 页面手动触发此工作流
   workflow_dispatch:
 
 jobs:
@@ -8,53 +20,84 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout Repository Content
+      # 步骤说明：签出你的仓库，以获取 luci-app-nixxi 和 seed.config 文件。
       uses: actions/checkout@v3
 
-    - name: Install Dependencies
+    - name: Install Build Dependencies
+      # 步骤说明：安装编译 OpenWrt 所需的所有系统工具。
       run: |
         sudo apt update
         sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
 
-    - name: Clone OpenWrt Source
+    - name: Clone OpenWrt Source Code
+      # 步骤说明：克隆指定版本的 OpenWrt 源码。
       run: git clone https://github.com/openwrt/openwrt.git -b openwrt-23.05 openwrt
 
-    - name: Update Feeds
+    - name: Update and Install Feeds
+      # 步骤说明：下载并安装 OpenWrt 官方的所有软件包定义。
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-    # ------------------- 这里是修改的地方 -------------------
-    - name: Copy Custom Files
+    - name: Inject Customizations (The Core Step)
+      # 步骤说明：这是整个流程的核心，执行替换和添加操作。
       run: |
-        # 我们不再删除官方的 mwan3
-        # 我们也不再复制一个不存在的 mwan3 文件夹
-        # 只把你自己仓库里的 luci-app-nixxi 复制进去
-        cp -r $GITHUB_WORKSPACE/luci-app-nixxi openwrt/package/
-    # --------------------------------------------------------
+        echo "--- Injecting custom packages and modifications ---"
+        
+        # 1. 删除官方旧版 mwan3 (基于 iptables)，这是你强调的“别编译原版的东西”。
+        echo "Removing original mwan3 from feeds..."
+        rm -rf openwrt/package/feeds/packages/mwan3
 
-    - name: Load Config and Download Prerequisites
+        # 2. 克隆支持 nftables 的新版 mwan3 (来自 feckert)，这是你要的“修改内容”。
+        echo "Cloning NFT-ready mwan3 from feckert/mwan3..."
+        git clone https://github.com/feckert/mwan3.git openwrt/package/mwan3
+
+        # 3. 复制你自己的 luci-app-nixxi，这是另一个核心目标。
+        echo "Copying custom luci-app-nixxi..."
+        cp -r $GITHUB_WORKSPACE/luci-app-nixxi openwrt/package/
+
+        echo "--- Customizations applied successfully ---"
+
+    - name: Load Build Config and Download Sources
+      # 步骤说明：加载你的配置文件，并下载所有需要编译的包的源码。
       run: |
+        # 将你的配置种子文件复制到源码树
         cp $GITHUB_WORKSPACE/seed.config openwrt/.config
         cd openwrt
+        
+        # 根据 .config 生成完整的编译配置，并自动选择所有依赖
         make defconfig
+        
+        # 下载所有被选中的包的源码，-j`nproc` 表示多线程下载
         make download -j$(nproc)
 
-    - name: Build ONLY the packages (Stop on error)
+    - name: Build ONLY The Required Packages
+      # 步骤说明：不使用 'make' 命令编译整个固件，只针对性地编译这两个包。
+      # 编译系统会自动处理它们的依赖关系。
       run: |
         cd openwrt
-        echo "--- Building mwan3 ---"
+        echo "--- Starting to build packages (mwan3 & luci-app-nixxi) ---"
+        
+        # 编译 mwan3 (nftables 版本)
         make package/mwan3/compile -j$(nproc) V=s
-        echo "--- Building luci-app-nixxi ---"
+        
+        # 编译 luci-app-nixxi
         make package/luci-app-nixxi/compile -j$(nproc) V=s
-        echo "--- All packages built successfully ---"
+        
+        echo "--- Package compilation finished ---"
 
-    - name: Organize IPK files
+    - name: Organize IPK Files for Upload
+      # 步骤说明：编译完成后，在 bin/packages 目录会生成大量 ipk 文件。
+      # 此步骤将所有 ipk 文件（包括依赖包）收集到一个独立的文件夹中。
       run: |
         mkdir -p ipk_packages
         find openwrt/bin/packages -type f -name "*.ipk" -exec mv {} ipk_packages/ \;
+        echo "All .ipk files have been moved to ipk_packages/"
         echo "IPK_PATH=ipk_packages" >> $GITHUB_ENV
 
-    - name: Upload IPK Packages
+    - name: Upload IPK Artifacts
+      # 步骤说明：将包含所有 .ipk 文件的文件夹打包上传。
+      # 编译成功后，你可以在 Actions 页面下载这个名为 "Final-IPK-Packages" 的压缩包。
       uses: actions/upload-artifact@v4
       with:
-        name: IPK-Packages
+        name: Final-IPK-Packages
         path: ${{ env.IPK_PATH }}
