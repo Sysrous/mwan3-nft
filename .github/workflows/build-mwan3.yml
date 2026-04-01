@@ -56,11 +56,10 @@ jobs:
           cd openwrt
           make download -j$(nproc) V=s
 
-      - name: Compile mwan3
+      - name: Full build
         run: |
           cd openwrt
-          make package/mwan3/compile V=s -j$(nproc)
-          make package/luci-app-mwan3/compile V=s -j$(nproc)
+          make -j$(nproc) V=s
 
       - name: Collect ipk
         run: |
