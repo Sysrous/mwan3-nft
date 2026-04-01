@@ -1,11 +1,12 @@
 # =========================================================================
-#      Build OpenWrt Packages - NFT-MWAN3 & Nixxi (v4 - Protocol-Switch)
+#      Build OpenWrt Packages - NFT-MWAN3 & Nixxi (v5 - Syntax-Purified)
 # =========================================================================
 # 运维工程师注释：
-# 版本 4 更新日志：
-# 1. [根源修复] 锁定 Exit Code 128 的新元凶：Git 认证干扰。
-#    在克隆 feckert/mwan3 时，将 HTTPS 协议切换为匿名的 GIT 协议 (git://)，
-#    以绕过 GitHub Actions 环境中默认注入的、导致认证混乱的 HTTP Header。
+# 版本 5 更新日志：
+# 1. [根源修复] 锁定 Exit Code 2 的元凶：Shell 脚本语法错误。
+#    错误信息 "unexpected EOF while looking for matching `"`" 表明脚本中存在未闭合的引号。
+# 2. [净化脚本] 移除了所有 'run:' 代码块内部的中文注释，
+#    彻底杜绝因非 ASCII 字符导致的 YAML 或 Shell 解析器混乱问题。
 # =========================================================================
 
 name: Build Custom IPK Packages
@@ -33,16 +34,41 @@ jobs:
       run: cd openwrt_source && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Inject Customizations (The Core Step)
+      # [修复] 移除了内部所有注释，避免解析错误
       run: |
         echo "--- Injecting custom packages and modifications ---"
-        
-        # 1. 删除官方旧版 mwan3
-        echo "Removing original mwan3 from feeds..."
         rm -rf openwrt_source/package/feeds/packages/mwan3
-
-        # 在克隆前，强制删除可能存在的旧目录，作为双重保险
-        echo "Cleaning up target directory for custom mwan3..."
         rm -rf openwrt_source/package/mwan3
-        
-        # 2. [修复] 克隆支持 nftables 的新版 mwan3，使用 git:// 协议避免认证问题
-        echo "Cloning NFT-ready mwan3 from feckert
+        echo "Cloning NFT-ready mwan3 from feckert/mwan3 using git:// protocol..."
+        git clone git://github.com/feckert/mwan3.git openwrt_source/package/mwan3
+        echo "Copying custom luci-app-nixxi..."
+        cp -r $GITHUB_WORKSPACE/luci-app-nixxi openwrt_source/package/
+        echo "--- Customizations applied successfully ---"
+
+    - name: Load Build Config and Download Sources
+      run: |
+        cp $GITHUB_WORKSPACE/seed.config openwrt_source/.config
+        cd openwrt_source
+        make defconfig
+        make download -j$(nproc)
+
+    - name: Build ONLY The Required Packages
+      run: |
+        cd openwrt_source
+        echo "--- Starting to build packages (mwan3 & luci-app-nixxi) ---"
+        make package/mwan3/compile -j$(nproc) V=s
+        make package/luci-app-nixxi/compile -j$(nproc) V=s
+        echo "--- Package compilation finished ---"
+
+    - name: Organize IPK Files for Upload
+      run: |
+        mkdir -p ipk_packages
+        find openwrt_source/bin/packages -type f -name "*.ipk" -exec mv {} ipk_packages/ \;
+        echo "All .ipk files have been moved to ipk_packages/"
+        echo "IPK_PATH=ipk_packages" >> $GITHUB_ENV
+
+    - name: Upload IPK Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Final-IPK-Packages
+        path: ${{ env.IPK_PATH }}
