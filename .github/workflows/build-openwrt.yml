@@ -22,11 +22,14 @@ jobs:
     - name: Update Feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
+    # ------------------- 这里是修改的地方 -------------------
     - name: Copy Custom Files
       run: |
-        rm -rf openwrt/package/feeds/packages/mwan3
-        cp -r $GITHUB_WORKSPACE/mwan3 openwrt/package/
+        # 我们不再删除官方的 mwan3
+        # 我们也不再复制一个不存在的 mwan3 文件夹
+        # 只把你自己仓库里的 luci-app-nixxi 复制进去
         cp -r $GITHUB_WORKSPACE/luci-app-nixxi openwrt/package/
+    # --------------------------------------------------------
 
     - name: Load Config and Download Prerequisites
       run: |
@@ -35,14 +38,23 @@ jobs:
         make defconfig
         make download -j$(nproc)
 
-    - name: Build ONLY the packages
+    - name: Build ONLY the packages (Stop on error)
       run: |
         cd openwrt
+        echo "--- Building mwan3 ---"
         make package/mwan3/compile -j$(nproc) V=s
+        echo "--- Building luci-app-nixxi ---"
         make package/luci-app-nixxi/compile -j$(nproc) V=s
+        echo "--- All packages built successfully ---"
 
     - name: Organize IPK files
       run: |
         mkdir -p ipk_packages
         find openwrt/bin/packages -type f -name "*.ipk" -exec mv {} ipk_packages/ \;
-        echo "IPK
+        echo "IPK_PATH=ipk_packages" >> $GITHUB_ENV
+
+    - name: Upload IPK Packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: IPK-Packages
+        path: ${{ env.IPK_PATH }}
