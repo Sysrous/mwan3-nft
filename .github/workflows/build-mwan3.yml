@@ -1,23 +1,18 @@
 #
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-# File name: build-mwan3.yml
-# Description: Build mwan3-nft package
+# GitHub Actions build script for mwan3-nft
+# Targeted for OpenWrt 24.xx series, generating .ipk packages
 #
 
-name: Build mwan3-nft
+name: Build mwan3-nft for OpenWrt 24.xx (ipk)
 
 on:
   workflow_dispatch:
     inputs:
-      branch:
+      openwrt_branch:
         description: 'OpenWrt Branch'
         required: true
-        default: 'openwrt-23.05'
+        # 【关键修正】使用 openwrt-24.10 作为基础，确保生成 .ipk 包
+        default: 'openwrt-24.10'
 
 jobs:
   build:
@@ -27,7 +22,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 初始化编译环境
+    - name: Initialize build environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
@@ -39,49 +34,53 @@ jobs:
         libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
         mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip qemu-utils \
         rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        
-    - name: 克隆 OpenWrt 源码
+
+    - name: Clone OpenWrt source code
       run: |
-        git clone https://github.com/openwrt/openwrt.git -b ${{ github.event.inputs.branch }} openwrt
+        git clone https://github.com/openwrt/openwrt.git -b ${{ github.event.inputs.openwrt_branch }} openwrt
         cd openwrt
+        # 注入 mwan3-nft 的 feed
         echo "src-git mwan3nft https://github.com/dl12345/mwan3-nft.git" >> feeds.conf.default
-      
-    - name: 更新 & 安装 Feeds
+
+    - name: Update and install feeds
       run: |
         cd openwrt
-        # 移除官方旧的 mwan3，避免冲突
         rm -rf feeds/packages/net/mwan3
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 加载自定义配置
+    - name: Load custom build configuration
       run: |
-        [ -e -f .config ] && mv .config openwrt/.config
+        if [ -f ../.config ]; then
+          mv ../.config openwrt/.config
+        else
+          echo "ERROR: .config file not found. Please create it first."
+          exit 1
+        fi
         cd openwrt
         make defconfig
 
-    - name: 仅下载 mwan3 依赖包
+    - name: Download package dependencies
       run: |
         cd openwrt
         make package/mwan3/download V=s
         make package/luci-app-mwan3/download V=s
-        
-    - name: 编译 mwan3 和 luci-app-mwan3
+
+    - name: Compile mwan3 and its LuCI interface
       run: |
         cd openwrt
-        echo -e "$(nproc) thread compile"
+        echo "Compiling with $(nproc) threads..."
         make package/mwan3/compile V=s
         make package/luci-app-mwan3/compile V=s
 
-    - name: 整理文件
+    - name: Organize build artifacts
       id: organize
       run: |
         cd openwrt/bin/packages/
         echo "PACKAGES_PATH=$(pwd)" >> $GITHUB_ENV
-        echo "packages" > ../../../ARTIFACT
-        
-    - name: 上传编译产物
+
+    - name: Upload compiled packages
       uses: actions/upload-artifact@v4
       with:
-        name: mwan3-nft-packages
+        name: mwan3-nft-packages-ipk-24.10
         path: ${{ env.PACKAGES_PATH }}
