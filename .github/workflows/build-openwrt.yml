@@ -1,12 +1,11 @@
 # =========================================================================
-#      Build OpenWrt Packages - NFT-MWAN3 & Nixxi (v3 - Conflict-Proof)
+#      Build OpenWrt Packages - NFT-MWAN3 & Nixxi (v4 - Protocol-Switch)
 # =========================================================================
 # 运维工程师注释：
-# 版本 3 更新日志：
-# 1. [根源修复] 锁定导致 Exit Code 128 的元凶：命名冲突。
-#    将 OpenWrt 源码的克隆目录从 'openwrt' 修改为 'openwrt_source'，
-#    彻底避免与用户仓库中可能存在的 'openwrt' 文件夹发生冲突。
-# 2. [同步] 所有后续操作的路径全部更新为 'openwrt_source'，确保脚本一致性。
+# 版本 4 更新日志：
+# 1. [根源修复] 锁定 Exit Code 128 的新元凶：Git 认证干扰。
+#    在克隆 feckert/mwan3 时，将 HTTPS 协议切换为匿名的 GIT 协议 (git://)，
+#    以绕过 GitHub Actions 环境中默认注入的、导致认证混乱的 HTTP Header。
 # =========================================================================
 
 name: Build Custom IPK Packages
@@ -28,15 +27,12 @@ jobs:
         sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
 
     - name: Clone OpenWrt Source Code
-      # [修复] 克隆到 'openwrt_source' 目录，防止命名冲突
       run: git clone https://github.com/openwrt/openwrt.git -b openwrt-23.05 openwrt_source
 
     - name: Update and Install Feeds
-      # [同步] 路径更新
       run: cd openwrt_source && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Inject Customizations (The Core Step)
-      # [同步] 所有路径更新
       run: |
         echo "--- Injecting custom packages and modifications ---"
         
@@ -48,37 +44,5 @@ jobs:
         echo "Cleaning up target directory for custom mwan3..."
         rm -rf openwrt_source/package/mwan3
         
-        # 2. 克隆支持 nftables 的新版 mwan3
-        echo "Cloning NFT-ready mwan3 from feckert/mwan3..."
-        git clone https://github.com/feckert/mwan3.git openwrt_source/package/mwan3
-
-        # 3. 复制你自己的 luci-app-nixxi
-        echo "Copying custom luci-app-nixxi..."
-        cp -r $GITHUB_WORKSPACE/luci-app-nixxi openwrt_source/package/
-
-        echo "--- Customizations applied successfully ---"
-
-    - name: Load Build Config and Download Sources
-      # [同步] 路径更新
-      run: |
-        cp $GITHUB_WORKSPACE/seed.config openwrt_source/.config
-        cd openwrt_source
-        make defconfig
-        make download -j$(nproc)
-
-    - name: Build ONLY The Required Packages
-      # [同步] 路径更新
-      run: |
-        cd openwrt_source
-        echo "--- Starting to build packages (mwan3 & luci-app-nixxi) ---"
-        make package/mwan3/compile -j$(nproc) V=s
-        make package/luci-app-nixxi/compile -j$(nproc) V=s
-        echo "--- Package compilation finished ---"
-
-    - name: Organize IPK Files for Upload
-      # [同步] 路径更新
-      run: |
-        mkdir -p ipk_packages
-        find openwrt_source/bin/packages -type f -name "*.ipk" -exec mv {} ipk_packages/ \;
-        echo "All .ipk files have been moved to ipk_packages/"
-        echo "IPK
+        # 2. [修复] 克隆支持 nftables 的新版 mwan3，使用 git:// 协议避免认证问题
+        echo "Cloning NFT-ready mwan3 from feckert
